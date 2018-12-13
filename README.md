@@ -17,7 +17,7 @@ These instructions will get you a copy of the project up and running on your loc
 
 
 ### Result
+![Good looking loss function](result/loss.png)
+![Poor performance](result/result.gif)
 
-![](result/result.gif)
-![](result/loss.png)
 
