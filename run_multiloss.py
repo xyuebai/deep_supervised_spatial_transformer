@@ -57,8 +57,14 @@ def train(model, verified_points, loader, epoch, optimizer, criterion, device, d
         assert (theta.size(0) == pred_theta.size(
             0)), "The batch sizes of the input images must be same as the generated grid."
         # print('prediction:'+str(pred_stn.size())+';traget_theta'+str(theta.size()))
+
+        # t_pts: target transformed coordinates by dlib
+        # p_pts: predicted transformed coordinates by net
         t_pts, p_pts = pts_trans(pred_theta, target_theta, verified_points)
-        pts_loss = pw_loss(p_pts, t_pts)
+
+
+        pts_loss = my_pw_loss(p_pts, t_pts)
+
         # age_loss = criterion(output, target)  # sum up batch loss
         loss = pts_loss + 0 * age_loss
         losses += pts_loss.item()
@@ -85,6 +91,24 @@ def train(model, verified_points, loader, epoch, optimizer, criterion, device, d
                                                errors / (batch_idx + 1)))
         if batch_idx >= 1200:
             break
+
+        if batch_idx == 20:
+            p_theta, transformed_input_tensor = model.module.stnmod(data)
+            p_theta, transformed_input_tensor = p_theta.cpu(), transformed_input_tensor.cpu()
+            out_grid = convert_image_np(
+                torchvision.utils.make_grid(transformed_input_tensor))
+            f, axarr = plt.subplots(figsize=(20, 10))
+            axarr.imshow(out_grid)
+            axarr.set_title('Transformed Images')
+            fig_path = 'results/gif_224_20/'
+            if not os.path.exists(fig_path):
+                os.mkdir(fig_path)
+            f.savefig(fig_path + 'train_epoch_' + str(epoch) + '.png')
+            with open('results/224_20_train-batch20.csv', 'a') as csv_file:
+                wr = csv.writer(csv_file, quoting=csv.QUOTE_ALL)
+                wr.writerow(p_theta)
+                wr.writerow(target_theta.cpu())
+
     return losses / (batch_idx + 1), errors / (batch_idx + 1)
 
 
@@ -118,7 +142,7 @@ def test(model, verified_points, epoch, loader, criterion, device, dtype):
                 0)), "The batch sizes of the input images must be same as the generated grid."
             # print('prediction:'+str(pred_stn.size())+';traget_theta'+str(theta.size()))
             t_pts, p_pts = pts_trans(pred_theta, theta, verified_points)
-            pts_loss += pw_loss(p_pts, t_pts).item()
+            pts_loss += my_pw_loss(p_pts, t_pts).item()
             # age_loss += criterion(output, target).item()  # sum up batch loss
             corr = correct(output, target, topk=(1, 5))
             # correct1 += corr[0]
@@ -134,7 +158,7 @@ def test(model, verified_points, epoch, loader, criterion, device, dtype):
                 f, axarr = plt.subplots(figsize=(20, 10))
                 axarr.imshow(out_grid)
                 axarr.set_title('Transformed Images')
-                fig_path = 'results/gif/'
+                fig_path = 'results/gif_test_224_20/'
                 if not os.path.exists(fig_path):
                     os.mkdir(fig_path)
                 f.savefig(fig_path + 'epoch_' + str(epoch) + '.png')
@@ -235,13 +259,30 @@ def pw_loss(p_pts,t_pts):
     cs = torch.nn.CosineSimilarity()
     pw_loss = pw(p_pts, t_pts)
     pw_loss = torch.mean(pw_loss)
-    return pw_loss*0.1
+    return pw_loss
+
+def my_pw_loss(p_pts,t_pts):
+    # batch_size = t_pts.size(0)
+    distance = abs(p_pts - t_pts)
+    distance = distance.pow(2)
+    distance = torch.sum(distance, dim=2)
+    distance = distance ** (1 / 2)
+    distance = torch.sum(distance, dim=1)
+    distance = torch.mean(distance)
+    return distance*1
+
+def my_loss(p_pts,t_pts):
+
+    return sum(sum(sum(abs(p_pts-t_pts))))/(t_pts.size(0)*225)
+
 
 def convert_image_np(inp):
-    """Convert a Tensor to numpy image."""
-    inp = inp.numpy().transpose((1, 2, 0))
-    mean = np.array([0.485, 0.456, 0.406])
-    std = np.array([0.229, 0.224, 0.225])
-    inp = std * inp + mean
-    inp = np.clip(inp, 0, 1)
-    return inp
+    with torch.no_grad():
+        """Convert a Tensor to numpy image."""
+        inp = inp.detach().numpy().transpose((1, 2, 0))
+        mean = np.array([0.485, 0.456, 0.406])
+        std = np.array([0.229, 0.224, 0.225])
+        inp = std * inp + mean
+        inp = np.clip(inp, 0, 1)
+        return inp
+

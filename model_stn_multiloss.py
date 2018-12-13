@@ -33,15 +33,23 @@ def _make_divisible(v, divisor, min_value=None):
 class SpatialTransformer(nn.Module):
     def __init__(self, shearing=True):
         super(SpatialTransformer, self).__init__()
+
         self.shearing = shearing
 
         self.localization = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=3, padding=1, bias=False),
+            nn.Conv2d(3, 16, kernel_size=3, padding=1, bias=False),
             nn.ReLU(True),
-            nn.AvgPool2d(2, stride=2),
+            nn.Conv2d(16, 16, kernel_size=3, padding=1, bias=False),
+            nn.ReLU(True),
+            nn.MaxPool2d(2, stride=2),
+
+            nn.Conv2d(16, 32, kernel_size=3, padding=1, bias=False),
+            nn.ReLU(True),
+            nn.MaxPool2d(2, stride=2),
             nn.Conv2d(32, 64, kernel_size=3, padding=1, bias=False),
             nn.ReLU(True),
-            nn.AvgPool2d(2, stride=2),
+            nn.MaxPool2d(2, stride=2),
+            nn.ReLU(True),
             # nn.Conv2d(3, 32, kernel_size=3, padding=1, bias=False),
             # nn.ReLU(True),
             # nn.MaxPool2d(2, stride=2),
@@ -61,20 +69,19 @@ class SpatialTransformer(nn.Module):
             # nn.ReLU(True),
             # nn.MaxPool2d(2, stride=2),
         )
-        self.localization[0].weight.data.normal_(0.0, 0.02)
+
+
         if self.shearing:
             # Regressor for the 3 * 2 affine matrix
             self.fc_loc = nn.Sequential(
                 # nn.Linear(3 * 112 * 112, 6),
                 # nn.ReLU(True),
-                nn.Linear(64 * 64 * 64, 128),
+                nn.Linear(64 * 28 * 28, 128),
                 nn.ReLU(True),
                 nn.Linear(128, 2 * 3),
             )
             # Initialize the weights/bias with identity transformation
-
-            self.fc_loc[0].weight.data.normal_(0.0, 0.02)
-            self.fc_loc[2].weight.data.normal_(0.0, 0.02)
+            self._initialize_weights()
             self.fc_loc[2].bias.data.copy_(torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float))
         else:
             self.fc_loc = nn.Sequential(
@@ -87,18 +94,34 @@ class SpatialTransformer(nn.Module):
             self.fc_loc[0].weight.data.normal_(0.0, 0.02)
             self.fc_loc[0].bias.data.copy_(torch.tensor([1, 0, 0, 0], dtype=torch.float))
 
+
+
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, 0.01)
+                # nn.init.constant_(m.bias, 0)
+
     def stn(self, x):
         xs = self.localization(x)
-        xs = xs.view(-1, 64 * 64 * 64)
+        xs = xs.view(-1, 64 * 28 * 28)
         f_theta = self.fc_loc(xs)
         theta = f_theta.view(-1, 2, 3)
         w_theta = f_theta.data.tolist()
-        theta[:,0,2] = theta[:,0,2]*913-812
-        theta[:,1,2] = theta[:,1,2]*1017-916
+        # theta[:,0,2] = theta[:,0,2]*913-812
+        # theta[:,1,2] = theta[:,1,2]*1017-916
+        theta[:, 0, 2] = theta[:, 0, 2]
+        theta[:, 1, 2] = theta[:, 1, 2]
         grid = F.affine_grid(theta, x.size())
 
         x = F.grid_sample(x, grid)
-
         return f_theta, x
 
     def oshear_stn(self, x):

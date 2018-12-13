@@ -63,9 +63,9 @@ parser.add_argument('--log-interval', type=int, default=5, metavar='N', help='Nu
 parser.add_argument('--seed', type=int, default=None, metavar='S', help='random seed (default: 1)')
 
 # Architecture
-parser.add_argument('--shearing', type=int, default=True,  help='Applying constrain (no shearing) to STN')
+parser.add_argument('--shearing', type=int, default=True, help='Applying constrain (no shearing) to STN')
 parser.add_argument('--scaling', type=float, default=1, metavar='SC', help='Scaling of MobileNet (default x1).')
-parser.add_argument('--input-size', type=int, default=256, metavar='I',
+parser.add_argument('--input-size', type=int, default=224, metavar='I',
                     help='Input size of MobileNet, multiple of 32 (default 224).')
 
 # https://github.com/keras-team/keras/blob/fe066966b5afa96f2f6b9f71ec0c71158b44068d/keras/applications/mobilenetv2.py#L30
@@ -82,8 +82,18 @@ claimed_acc_top5 = {224: {1.4: 0.925, 1.3: 0.921, 1.0: 0.910, 0.75: 0.896, 0.5: 
                     96: {1.0: 0.832, 0.75: 0.816, 0.5: 0.758, 0.35: 0.704},
                     }
 
-predefined_points = torch.tensor([[91, 91, 1], [91, 273, 1], [128, 128, 1], [273, 91, 1], [273, 273, 1]])
+# predefined_points = torch.tensor([[64, 64, 1], [64, 192, 1], [128, 128, 1], [192, 64, 1], [192, 192, 1]])
+# predefined_points = torch.tensor([[56, 56, 1], [56, 168, 1], [112, 112, 1], [168, 56, 1], [168, 168, 1]])
 
+# predefined_points = torch.zeros([225, 3], dtype=torch.int32)
+# predefined_points[:, 2] = 1
+# predefined_points[:, 1] = torch.linspace(0, 224, steps=15).repeat(15)
+# a = torch.linspace(0, 224, steps=15).repeat(15, 1).transpose(0, 1)
+# a_flat = a.contiguous().view(a.numel())
+# predefined_points[:, 0] = a_flat
+
+
+predefined_points = torch.tensor([[56, 56, 1], [56, 168, 1], [168, 112, 1]])
 
 def main():
     args = parser.parse_args()
@@ -100,7 +110,7 @@ def main():
     if args.evaluate:
         args.results_dir = '/tmp'
     if args.save is '':
-        args.save = 'test_theta_' + time_stamp
+        args.save = 'mar10_224_' + time_stamp
     save_path = os.path.join(args.results_dir, args.save)
     if not os.path.exists(save_path):
         os.makedirs(save_path)
@@ -138,8 +148,6 @@ def main():
     criterion = torch.nn.CrossEntropyLoss()
     L1_criterion = torch.nn.L1Loss()
     PW_criterion = torch.nn.CosineSimilarity(dim=2, eps=1e-6)
-
-
 
     if args.gpus is not None:
         model = torch.nn.DataParallel(model, args.gpus)
@@ -219,7 +227,7 @@ def main():
             print("=> no checkpoint found at '{}'".format(args.resume))
 
     if args.evaluate:
-        loss, test_mae = test(model, predefined_points, 0,  test_loader, PW_criterion, device, dtype)  # TODO
+        loss, test_mae = test(model, predefined_points, 0, test_loader, PW_criterion, device, dtype)  # TODO
         return
 
     csv_logger = CsvLogger(filepath=save_path, data=data)
@@ -234,12 +242,14 @@ def main():
     #         csv_logger.write_text(
     #             'Claimed accuracies are: {:.2f}% top-1, {:.2f}% top-5'.format(claimed_acc1 * 100., claimed_acc5 * 100.))
 
-    train_network(args.start_epoch, args.epochs, scheduler, model, predefined_points, train_loader, val_loader, test_loader, optimizer,
+    train_network(args.start_epoch, args.epochs, scheduler, model, predefined_points, train_loader, val_loader,
+                  test_loader, optimizer,
                   PW_criterion,
                   device, dtype, args.batch_size, args.log_interval, csv_logger, save_path, best_val)
 
 
-def train_network(start_epoch, epochs, scheduler, model, verified_points, train_loader, val_loader, test_loader, optimizer, criterion,
+def train_network(start_epoch, epochs, scheduler, model, verified_points, train_loader, val_loader, test_loader,
+                  optimizer, criterion,
                   device, dtype,
                   batch_size, log_interval, csv_logger, save_path, best_val):
     for epoch in trange(start_epoch, epochs + 1):
@@ -264,6 +274,8 @@ def train_network(start_epoch, epochs, scheduler, model, verified_points, train_
             best_val = val_mae
 
     csv_logger.write_text('Lowest mae is {:.2f}'.format(best_val))
+
+
 
 
 if __name__ == '__main__':
