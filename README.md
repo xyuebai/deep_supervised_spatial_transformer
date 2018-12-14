@@ -26,9 +26,3 @@ python3 stn_mobileV2_multi.py --dataroot "/pathtoyourdatabase" --resume "results
 ### Reference
 MobileNetv2 in PyTorch: https://github.com/Randl/MobileNetV2-pytorch
 
-### Result
-###### Good looking loss graph
-![Good looking loss function](result/loss.png)
-###### However, disaster performing
-![Poor performance](result/result.gif)
-
